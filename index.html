@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INSINIX | Autonomous ML Rover Control Simulator</title>
+  <meta name="description" content="INSINIX Real-Time ML Rover Controller & Sensor Telemetry Simulator powered by PyTorch Behavioral Cloning and FastAPI.">
+  <link rel="stylesheet" href="index.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Navigation Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-icon">🚀</div>
+        <div class="logo-text">
+          <h1>INSINIX</h1>
+          <span class="subtext">Autonomous Rover ML Control Pipeline</span>
+        </div>
+      </div>
+
+      <div class="header-status-bar">
+        <div class="status-badge" id="badge-controller">
+          <span class="indicator-dot dot-blue"></span>
+          <span class="label">Controller:</span>
+          <span class="value" id="val-controller">A* Expert</span>
+        </div>
+        <div class="status-badge" id="badge-server">
+          <span class="indicator-dot dot-red" id="dot-server"></span>
+          <span class="label">ML Server:</span>
+          <span class="value" id="val-server">Disconnected</span>
+        </div>
+        <div class="status-badge" id="badge-safety">
+          <span class="indicator-dot dot-green" id="dot-safety"></span>
+          <span class="label">Safety State:</span>
+          <span class="value" id="val-safety">PROCEED</span>
+        </div>
+        <div class="status-badge">
+          <span class="label">Latency:</span>
+          <span class="value mono" id="val-latency">-- ms</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button id="btn-toggle-sim" class="btn btn-primary">
+          <span class="icon">▶</span> <span id="lbl-sim-toggle">Start Simulation</span>
+        </button>
+        <button id="btn-reset-sim" class="btn btn-secondary">
+          <span class="icon">↺</span> Reset
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <main class="main-content">
+      <!-- Sidebar Control Panel -->
+      <aside class="sidebar">
+        <!-- Panel 1: Connect ML Panel -->
+        <section class="card panel-connect-ml" id="panel-connect-ml">
+          <div class="card-header">
+            <h3>🔌 Connect ML Server</h3>
+            <span class="badge-mini" id="badge-ml-active-state">ML OFF</span>
+          </div>
+
+          <div class="card-body">
+            <div class="form-group">
+              <label for="input-server-url">FastAPI Server Endpoint</label>
+              <div class="input-with-btn">
+                <input type="text" id="input-server-url" value="http://localhost:8000" placeholder="http://localhost:8000" id="server-url-input">
+                <button id="btn-connect-ml" class="btn btn-success btn-sm">Connect</button>
+              </div>
+            </div>
+
+            <div class="toggle-container highlight-box">
+              <div class="toggle-info">
+                <label for="toggle-active-in-sim" class="toggle-label">Active In Simulation</label>
+                <span class="toggle-desc">Use ML policy predictions for rover steering & speed</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-active-in-sim">
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="metrics-grid mini-grid">
+              <div class="metric-item">
+                <span class="metric-label">Server Status</span>
+                <span class="metric-val" id="ml-server-status">OFFLINE</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Model Status</span>
+                <span class="metric-val" id="ml-model-status">NOT LOADED</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Inference Time</span>
+                <span class="metric-val mono" id="ml-latency-val">-- ms</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Last Steering</span>
+                <span class="metric-val mono" id="ml-steering-val">0.00</span>
+              </div>
+            </div>
+
+            <div class="safety-config-box">
+              <div class="config-header">
+                <span>🛡️ Safety Layer Thresholds</span>
+              </div>
+              <div class="slider-group">
+                <label>Emergency Stop Distance: <span class="val-num" id="val-stop-dist">0.10 (10%)</span></label>
+                <input type="range" id="range-stop-dist" min="0.05" max="0.25" step="0.01" value="0.10">
+              </div>
+              <div class="slider-group">
+                <label>Slow Down Distance: <span class="val-num" id="val-slow-dist">0.20 (20%)</span></label>
+                <input type="range" id="range-slow-dist" min="0.15" max="0.40" step="0.01" value="0.20">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Panel 2: Telemetry & Data Collection -->
+        <section class="card panel-telemetry">
+          <div class="card-header">
+            <h3>📊 Telemetry & Expert Collection</h3>
+            <span class="badge-count" id="val-telemetry-count">0 Rows</span>
+          </div>
+          <div class="card-body">
+            <p class="section-desc">Records expert A* timesteps (22 state vector features + steering & speed) into <code>telemetry.csv</code>.</p>
+            <div class="button-row">
+              <button id="btn-toggle-record" class="btn btn-outline">
+                <span class="indicator-record" id="ind-record"></span>
+                <span id="lbl-record">Start Recording</span>
+              </button>
+              <button id="btn-export-csv" class="btn btn-secondary">
+                💾 Export CSV
+              </button>
+            </div>
+            <button id="btn-batch-data" class="btn btn-secondary btn-full btn-sm" style="margin-top: 8px;">
+              ⚡ Generate 50+ Missions Telemetry
+            </button>
+          </div>
+        </section>
+
+        <!-- Panel 3: Mission & Rover Physics -->
+        <section class="card panel-physics">
+          <div class="card-header">
+            <h3>⚙️ Rover & Environment Settings</h3>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label for="select-map-preset">Environment Scenario Map</label>
+              <select id="select-map-preset" class="select-input">
+                <option value="random">Random Obstacles</option>
+                <option value="corridor">Narrow Corridor</option>
+                <option value="obstacle_field">Dense Obstacle Field</option>
+                <option value="canyon">Winding Canyon</option>
+                <option value="trap">Dead-End Trap</option>
+              </select>
+            </div>
+
+            <div class="slider-group">
+              <label>Payload Weight: <span class="val-num" id="val-payload">1.5 kg</span></label>
+              <input type="range" id="range-payload" min="0" max="5" step="0.1" value="1.5">
+            </div>
+
+            <div class="slider-group">
+              <label>Surface Friction: <span class="val-num" id="val-friction">0.80</span></label>
+              <input type="range" id="range-friction" min="0.1" max="1.0" step="0.05" value="0.80">
+            </div>
+
+            <button id="btn-new-map" class="btn btn-outline btn-full btn-sm">
+              🎲 Generate New Map Preset
+            </button>
+          </div>
+        </section>
+
+        <!-- Panel 4: Model Comparison & Metrics -->
+        <section class="card panel-comparison">
+          <div class="card-header">
+            <h3>📈 Model Comparison Mode</h3>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-debug-mode"> Debug Metrics
+            </label>
+          </div>
+          <div class="card-body">
+            <table class="comparison-table">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>A* Expert</th>
+                  <th>ML Neural</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Success Rate</td>
+                  <td id="m-astar-succ">100%</td>
+                  <td id="m-ml-succ">--</td>
+                </tr>
+                <tr>
+                  <td>Collisions</td>
+                  <td id="m-astar-col">0</td>
+                  <td id="m-ml-col">0</td>
+                </tr>
+                <tr>
+                  <td>Path Length</td>
+                  <td id="m-astar-path">0 m</td>
+                  <td id="m-ml-path">0 m</td>
+                </tr>
+                <tr>
+                  <td>Mission Time</td>
+                  <td id="m-astar-time">0.0 s</td>
+                  <td id="m-ml-time">0.0 s</td>
+                </tr>
+                <tr>
+                  <td>Avg Speed</td>
+                  <td id="m-astar-speed">0.0 m/s</td>
+                  <td id="m-ml-speed">0.0 m/s</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Central Canvas Arena & Overlay Panels -->
+      <section class="simulation-view">
+        <div class="canvas-wrapper">
+          <canvas id="simCanvas" width="800" height="600"></canvas>
+
+          <!-- On-Canvas HUD Overlay -->
+          <div class="canvas-hud">
+            <div class="hud-item">
+              <span class="hud-label">Current Controller</span>
+              <span class="hud-val highlight" id="hud-controller-name">A* Pathfinder</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">Rover Speed</span>
+              <span class="hud-val mono" id="hud-speed">0.0 m/s</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">Steering Angle</span>
+              <span class="hud-val mono" id="hud-steering">0.00°</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">Goal Distance</span>
+              <span class="hud-val mono" id="hud-goal-dist">0.0 m</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">Fallback Status</span>
+              <span class="hud-val" id="hud-fallback">Ready</span>
+            </div>
+          </div>
+
+          <!-- Canvas Overlay Controls (Visual Toggles) -->
+          <div class="canvas-overlays-toolbar">
+            <label class="overlay-chip">
+              <input type="checkbox" id="chk-show-lidar" checked> 📡 16 LiDAR Rays
+            </label>
+            <label class="overlay-chip">
+              <input type="checkbox" id="chk-show-goal" checked> 🎯 Goal Vector
+            </label>
+            <label class="overlay-chip">
+              <input type="checkbox" id="chk-show-vectors" checked> 🔀 A* vs ML Steering
+            </label>
+            <label class="overlay-chip">
+              <input type="checkbox" id="chk-show-path" checked> 🗺️ Planned Path
+            </label>
+          </div>
+        </div>
+
+        <!-- System Message / Log Bar -->
+        <div class="system-log-bar" id="system-log-bar">
+          <span class="log-icon">ℹ️</span>
+          <span class="log-msg" id="sys-log-msg">INSINIX Autonomous Rover Simulator initialized. Click "Connect" or "Start Simulation".</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
